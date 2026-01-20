@@ -1,0 +1,2 @@
+[console_scripts]
+vsr_baseline_autoavsr = auto_avsr.eval_video:main

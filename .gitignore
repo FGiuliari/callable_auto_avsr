@@ -8,3 +8,7 @@ outputs/
 *.pyc
 *.tar
 .DS_Store
+build/
+.build/
+ckpts/
+dist/
