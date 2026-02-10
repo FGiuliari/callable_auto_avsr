@@ -90,18 +90,25 @@ class ModelModule(LightningModule):
         return [optimizer], [scheduler]
 
     def forward(self, sample):
-        self.beam_search = get_beam_search_decoder(self.model, self.token_list)
+        self.beam_search = get_beam_search_decoder(
+            self.model,
+            self.token_list,
+            ctc_weight=0.3,
+        )
         x = self.model.frontend(sample.unsqueeze(0))
         x = self.model.proj_encoder(x)
         enc_feat, _ = self.model.encoder(x, None)
         enc_feat = enc_feat.squeeze(0)
         nbest_hyps = self.beam_search(enc_feat)
-        nbest_hyps = [h.asdict() for h in nbest_hyps[: min(len(nbest_hyps), 1)]]
-        predicted_token_id = torch.tensor(list(map(int, nbest_hyps[0]["yseq"][1:])))
-        predicted = self.text_transform.post_process(predicted_token_id).replace(
-            "<eos>", ""
-        )
-        return predicted
+        nbest_hyps = [h.asdict() for h in nbest_hyps[: min(len(nbest_hyps), 100)]]
+        predicted_all = []
+        for hyp in nbest_hyps:
+            predicted_token_id = torch.tensor(list(map(int, hyp["yseq"][1:])))
+            predicted = self.text_transform.post_process(predicted_token_id).replace(
+                "<eos>", ""
+            )
+            predicted_all.append(predicted)
+        return predicted_all
 
     def validation_step(self, batch, batch_idx):
         return self._step(batch, batch_idx, step_type="val")
@@ -198,7 +205,7 @@ def get_beam_search_decoder(
     penalty=0,
     ctc_weight=0.1,
     lm_weight=0.0,
-    beam_size=40,
+    beam_size=100,
 ):
     sos = model.odim - 1
     eos = model.odim - 1

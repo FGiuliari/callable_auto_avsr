@@ -6,6 +6,7 @@ import os
 from .lightning import ModelModule
 from .datamodule.transforms import AudioTransform, VideoTransform
 from pathlib import Path
+import tqdm
 
 # %%
 
@@ -46,7 +47,7 @@ class InferencePipeline(torch.nn.Module):
     def load_video(self, data_filename):
         return torchvision.io.read_video(data_filename, pts_unit="sec")[0].numpy()
 
-    def forward(self, data_filename):
+    def forward(self, data_filename, preprocess_video=False):
         data_filename = os.path.abspath(data_filename)
         assert os.path.isfile(
             data_filename
@@ -62,10 +63,11 @@ class InferencePipeline(torch.nn.Module):
 
         if self.modality == "video":
             video = self.load_video(data_filename)
-            print("calculating landmarks")
-            landmarks = self.landmarks_detector(video)
-            print("processing video")
-            video = self.video_process(video, landmarks)
+            if preprocess_video:
+                print("calculating landmarks")
+                landmarks = self.landmarks_detector(video)
+                print("processing video")
+                video = self.video_process(video, landmarks)
             video = torch.tensor(video)
             video = video.permute((0, 3, 1, 2))
             print("doing video transform")
@@ -111,8 +113,10 @@ def main():
         prog="vsr_baseline_autoAVSR",
         description="What the program does",
     )
-    parser.add_argument("filename", type=Path)  # positional argument
-    parser.add_argument("output_folder", type=Path, default=".")
+    parser.add_argument("videos", nargs="+", help="Path to one or more video files")
+
+    parser.add_argument("--output_folder", type=Path, default="./PREDICTED_AUTOAVSR")
+    parser.add_argument("--preprocess-video", action="store_true")
     args = parser.parse_args()
     model_path = "/home/fgiuliari/Documents/Projects/Industrial-Projects/Meetween/2026_ECCV_VSR_BENCH/baselines/auto_avsr/ckpts/vsr_trlrs2lrs3vox2avsp_base.pth"
 
@@ -122,22 +126,18 @@ def main():
     #
     # %%
     setattr(args, "modality", "video")
+
     pipeline = InferencePipeline(args, model_path, detector="mediapipe")
 
-    # %% [markdown]
-    # ### 3.3 Run inference
+    args.output_folder.mkdir(exist_ok=True, parents=True)
 
-    # %%
-    transcript = pipeline(args.filename)
-    print(transcript)
-
-    output_folder: Path = args.output_folder
-    output_folder.mkdir(exist_ok=True, parents=True)
-
-    file_name = args.filename.stem
-
-    with open(output_folder / f"{file_name}.txt", "w") as f:
-        print(transcript, file=f)
+    for video in tqdm.tqdm(args.videos):
+        video = Path(video)
+        transcripts = pipeline(video, args.preprocess_video)
+        file_name = video.stem
+        with open(args.output_folder / f"{file_name}.txt", "w") as f:
+            for t in transcripts:
+                print(t, file=f)
 
 
 if __name__ == "__main__":
